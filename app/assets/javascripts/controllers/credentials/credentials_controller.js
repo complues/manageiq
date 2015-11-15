@@ -7,6 +7,21 @@ ManageIQ.angularApplication.controller('credentialsController', ['$http', '$scop
       $scope.resetClicked();
     });
 
+    $scope.$on('setNewRecord', function(event, args) {
+      if(args != undefined) {
+        $scope.newRecord = args.newRecord;
+      }
+      else {
+        $scope.newRecord = true;
+      }
+    });
+
+    $scope.$on('setUserId', function(event, args) {
+      if(args != undefined) {
+        $scope.modelCopy[args.userIdName] = args.userIdValue;
+      }
+    });
+
     ManageIQ.angularApplication.$credentialsScope = $scope;
 
     if ($scope.formId == 'new') {
@@ -40,6 +55,7 @@ ManageIQ.angularApplication.controller('credentialsController', ['$http', '$scop
   };
 
   $scope.resetClicked = function() {
+    $scope.newRecord = false;
     $scope.cancelPasswordChange();
   };
 

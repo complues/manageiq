@@ -1536,7 +1536,10 @@ describe ApplicationHelper do
       context "and id = vm_scan" do
         before do
           @id = "vm_scan"
+          @record = FactoryGirl.create(:vm_vmware)
           @record.stub(:has_proxy?).and_return(true)
+          @record.stub(:archived? => false)
+          @record.stub(:orphaned? => false)
         end
 
         it "and !@record.has_proxy?" do
@@ -1546,6 +1549,11 @@ describe ApplicationHelper do
 
         it "and @record.has_proxy?" do
           subject.should == false
+        end
+
+        it "and @record.has_proxy? and is archived" do
+          @record.stub(:archived? => true)
+          subject.should == true
         end
       end
 
@@ -2063,6 +2071,19 @@ describe ApplicationHelper do
       end
     end
 
+    context "when record class = ContainerReplicator" do
+      before do
+        @record = ContainerReplicator.new
+        @record.stub(:has_perf_data? => true, :has_events? => true)
+      end
+
+      context "and id = container_replicator_timeline" do
+        before { @id = "container_replicator_timeline" }
+        it_behaves_like 'record without ems events and policy events', "No Timeline data has been collected for this Replicator"
+        it_behaves_like 'default case'
+      end
+    end
+
     context "when record class = Host" do
       before do
         @record = Host.new
@@ -2377,6 +2398,8 @@ describe ApplicationHelper do
         before do
           @id = "vm_scan"
           @record = FactoryGirl.create(:vm_vmware, :vendor => "vmware")
+          @record.stub(:archived? => false)
+          @record.stub(:orphaned? => false)
           @record.stub(:has_active_proxy? => true)
         end
         it "when no active proxy" do
@@ -2394,6 +2417,31 @@ describe ApplicationHelper do
         end
         before { @record.stub(:is_available?).with(:smartstate_analysis).and_return(false) }
         it_behaves_like 'record with error message', 'smartstate_analysis'
+      end
+
+      context "and id = storage_scan" do
+        before do
+          @id = "storage_scan"
+          @record = FactoryGirl.create(:storage)
+          host = FactoryGirl.create(:host_vmware,
+                                    :ext_management_system => FactoryGirl.create(:ems_vmware),
+                                    :storages              => [@record])
+        end
+
+        it "should be available for vmware storages" do
+          subject.should be(false)
+        end
+      end
+
+      context "and id = storage_scan" do
+        before do
+          @id = "storage_scan"
+          @record = FactoryGirl.create(:storage)
+        end
+
+        it "should be not be available for non-vmware storages" do
+          subject.should include('cannot be performed on selected')
+        end
       end
 
       context "and id = vm_timeline" do

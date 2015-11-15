@@ -9,10 +9,6 @@ function miqOnLoad() {
   if ($('#col1').length) {
     miqInitDashboardCols();
   }
-  // Initialize the dashboard widget pulldown
-  if ($('#widget_select_div').length) {
-    miqInitWidgetPulldown();
-  }
 
   // Track the mouse coordinates for popup menus
   $(document).mousemove(function (e) {
@@ -41,6 +37,11 @@ function miqOnLoad() {
     miqInitToolbars();
   }
 
+  // Initialize the dashboard widget pulldown
+  if ($('#widget_select_div').length) {
+    miqInitWidgetPulldown();
+  }
+
   // Refresh the myCodeMirror editor
   if (ManageIQ.editor !== null) {
     ManageIQ.editor.refresh();
@@ -57,6 +58,8 @@ function miqOnLoad() {
       $('#search_text').focus();
     } catch (er) {}
   }
+
+  miqInitAccordions();
 }
 
 function miqPrepRightCellForm(tree) {
@@ -70,14 +73,13 @@ function miqPrepRightCellForm(tree) {
 
 // Things to be done on page resize
 function miqOnResize() {
-  if (typeof dhxLayoutB != "undefined") {
-    dhxLayoutB.setSizes();
-  }
+  $(window).resize(miqInitAccordions);
   miqBrowserSizeTimeout();
 }
 
 // Initialize the widget pulldown on the dashboard
 function miqInitWidgetPulldown() {
+  $("#dashboard_dropdown #toolbar button:not(.dropdown-toggle), #toolbar ul.dropdown-menu > li > a").off('click');
   $("#dashboard_dropdown #toolbar button:not(.dropdown-toggle), #toolbar ul.dropdown-menu > li > a").click(miqWidgetToolbarClick);
 }
 
@@ -1189,7 +1191,7 @@ function miqInitSelectPicker() {
   $('.selectpicker').selectpicker();
   $('.selectpicker').selectpicker({
     style: 'btn-info',
-    size: 4
+    size: 10
   });
   $('.bootstrap-select > button[title]').not('.selectpicker').tooltip({container: 'none'});
 }
@@ -1199,7 +1201,9 @@ function miqSelectPickerEvent(element, url, options){
     var selected = $('#' + element).val();
     options =  typeof options !== 'undefined' ? options : {}
     options['no_encoding'] = true;
-    miqJqueryRequest(url + '?' + element + '=' + escape(selected), options);
+
+    var firstarg = ! _.contains(url, '?');
+    miqJqueryRequest(url + (firstarg ? '?' : '&') + element + '=' + escape(selected), options);
     return true;
   });
 }
@@ -1376,4 +1380,15 @@ function miqWidgetToolbarClick(e) {
   } else {
     miqAjax("/dashboard/widget_add?widget=" + itemId);
   }
+}
+
+function miqInitAccordions() {
+  var height = $('#left_div').height();
+  var panel = $('.panel-heading').outerHeight();
+  var count = $('#accordion > .panel .panel-body').length;
+  $('#accordion > .panel .panel-body').each(function (k, v) {
+    $(v).css('max-height', (height - count * panel) + 'px');
+    $(v).css('overflow-y', 'auto')
+    $(v).css('overflow-x', 'hidden')
+  });
 }

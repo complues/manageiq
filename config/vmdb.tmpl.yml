@@ -298,7 +298,9 @@ workers:
           :nova: "notifications.*"
           :cinder: "notifications.*"
           :glance: "notifications.*"
+          :neutron: "notifications.*"
           :quantum: "notifications.*"
+          :heat: "notifications.*"
         :duration: 10.seconds
         :capacity: 50
         :amqp_port: 5672
@@ -348,6 +350,8 @@ workers:
           :poll_method: :escalate
         :ems_metrics_collector_worker_kubernetes:
           :poll_method: :escalate
+          :metrics_port: 5000
+          :metrics_path: '/hawkular/metrics'
         :ems_metrics_collector_worker_openshift:
           :poll_method: :escalate
         :ems_metrics_collector_worker_atomic:

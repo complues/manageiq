@@ -9,20 +9,20 @@ describe "Available_Tenants Method Validation" do
   context "workspace has no service template" do
     it "provides only default value to the tenant list" do
       ws = MiqAeEngine.instantiate("#{@ins}", user)
-      ws.root["values"].should == {nil => "default"}
+      ws.root["values"].should == {nil => "<default>"}
     end
   end
 
-  context "workspece has service template other than orchestration" do
+  context "workspace has service template other than orchestration" do
     let(:service_template) { FactoryGirl.create(:service_template) }
 
     it "provides only default value to the tenant list" do
       ws = MiqAeEngine.instantiate("#{@ins}?ServiceTemplate::service_template=#{service_template.id}", user)
-      ws.root["values"].should == {nil => "default"}
+      ws.root["values"].should == {nil => "<default>"}
     end
   end
 
-  context "workspece has orchestration service template" do
+  context "workspace has orchestration service template" do
     let(:ems) do
       @tenant1 = FactoryGirl.create(:cloud_tenant)
       @tenant2 = FactoryGirl.create(:cloud_tenant)
@@ -40,7 +40,7 @@ describe "Available_Tenants Method Validation" do
     it "finds all the tenants and populates the list" do
       ws = MiqAeEngine.instantiate("#{@ins}?ServiceTemplate::service_template=#{service_template.id}", user)
       ws.root["values"].should include(
-        nil           => "default",
+        nil           => "<default>",
         @tenant1.name => @tenant1.name,
         @tenant2.name => @tenant2.name
       )
@@ -48,7 +48,7 @@ describe "Available_Tenants Method Validation" do
 
     it "provides only default value to the tenant list if orchestration manager does not exist" do
       ws = MiqAeEngine.instantiate("#{@ins}?ServiceTemplate::service_template=#{service_template_no_ems.id}", user)
-      ws.root["values"].should == {nil => "default"}
+      ws.root["values"].should == {nil => "<default>"}
     end
   end
 end

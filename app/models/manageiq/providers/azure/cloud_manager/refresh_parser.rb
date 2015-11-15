@@ -19,6 +19,8 @@ module ManageIQ::Providers
         @tds               = ::Azure::Armrest::TemplateDeploymentService.new(@config)
         @vns               = ::Azure::Armrest::Network::VirtualNetworkService.new(@config)
         @ips               = ::Azure::Armrest::Network::IpAddressService.new(@config)
+        @rgs               = ::Azure::Armrest::ResourceGroupService.new(@config)
+        @sas               = ::Azure::Armrest::StorageAccountService.new(@config)
         @options           = options || {}
         @data              = {}
         @data_index        = {}
@@ -29,11 +31,13 @@ module ManageIQ::Providers
         log_header = "Collecting data for EMS : [#{@ems.name}] id: [#{@ems.id}]"
 
         _log.info("#{log_header}...")
+        get_resource_groups
         get_series
         get_availability_zones
         get_stacks
         get_cloud_networks
         get_instances
+        get_images
         _log.info("#{log_header}...Complete")
 
         @data
@@ -41,19 +45,23 @@ module ManageIQ::Providers
 
       private
 
+      def get_resource_groups
+        resource_groups = @rgs.list.select do |resource_group|
+          resource_group.location == @ems.provider_region
+        end
+        process_collection(resource_groups, :resource_groups) do |resource_group|
+          parse_resource_group(resource_group)
+        end
+      end
+
       def get_series
         series = []
-        get_locations.each do |location|
-          begin
-            series << @vmm.series(location)
-          rescue ::Azure::Armrest::BadGatewayException,
-                 ::Azure::Armrest::GatewayTimeoutException,
-                 ::Azure::Armrest::BadRequestException
-            next
-          end
+        begin
+          series = @vmm.series(@ems.provider_region)
+        rescue ::Azure::Armrest::BadGatewayException, ::Azure::Armrest::GatewayTimeoutException,
+               ::Azure::Armrest::BadRequestException => err
+          _log.error("Error Class=#{err.class.name}, Message=#{err.message}")
         end
-        series = series.flatten
-        series = series.uniq
         process_collection(series, :flavors) { |s| parse_series(s) }
       end
 
@@ -66,7 +74,7 @@ module ManageIQ::Providers
       def get_stacks
         # deployments are realizations of a template in the Azure provider
         # they are parsed and converted to stacks in vmdb
-        deployments = @tds.list_all
+        deployments = gather_data_for_this_region(@tds)
         process_collection(deployments, :orchestration_stacks) { |dp| parse_stack(dp) }
         update_nested_stack_relations
       end
@@ -97,7 +105,7 @@ module ManageIQ::Providers
       end
 
       def get_cloud_networks
-        cloud_networks = @vns.list_all
+        cloud_networks = gather_data_for_this_region(@vns)
         process_collection(cloud_networks, :cloud_networks) { |cloud_network| parse_cloud_network(cloud_network) }
       end
 
@@ -107,8 +115,13 @@ module ManageIQ::Providers
       end
 
       def get_instances
-        instances = @vmm.list_all
+        instances = gather_data_for_this_region(@vmm)
         process_collection(instances, :vms) { |instance| parse_instance(instance) }
+      end
+
+      def get_images
+        images = gather_data_for_this_region(@sas, "list_private_images")
+        process_collection(images, :vms) { |image| parse_image(image) }
       end
 
       def process_collection(collection, key)
@@ -121,6 +134,24 @@ module ManageIQ::Providers
           @data[key] << new_result
           @data_index.store_path(key, uid, new_result)
         end
+      end
+
+      def gather_data_for_this_region(arm_service, method = "list")
+        results = []
+        @data[:resource_groups].each do |resource_group|
+          results << arm_service.send(method, resource_group[:name])
+        end
+        results.flatten
+      end
+
+      def parse_resource_group(resource_group)
+        uid = resource_group.id
+        new_result = {
+          :type    => "ResourceGroup",
+          :name    => resource_group.name,
+          :ems_ref => uid,
+        }
+        return uid, new_result
       end
 
       def parse_series(s)
@@ -173,9 +204,10 @@ module ManageIQ::Providers
       def parse_cloud_subnet(subnet)
         uid = subnet.id
         new_result = {
-          :ems_ref => uid,
-          :name    => subnet.name,
-          :cidr    => subnet.properties.address_prefix,
+          :ems_ref           => uid,
+          :name              => subnet.name,
+          :cidr              => subnet.properties.address_prefix,
+          :availability_zone => @data_index.fetch_path(:availability_zones, 'default'),
         }
         return uid, new_result
       end
@@ -224,9 +256,11 @@ module ManageIQ::Providers
         }
       end
 
+      # find both OS and SKU if possible, otherwise just the OS type.
       def guest_os(instance)
-        image_reference = instance.properties.storage_profile.image_reference
-        image_reference.offer + " " + image_reference.sku.tr('-', ' ')
+        image_reference = instance.properties.storage_profile.try(:image_reference)
+        return instance.properties.storage_profile.os_disk.os_type unless image_reference
+        "#{image_reference.offer} #{image_reference.sku.tr('-', ' ')}"
       end
 
       def populate_hardware_hash_with_disks(hardware_disks_array, instance)
@@ -284,13 +318,6 @@ module ManageIQ::Providers
         # No data availbale on swap disk? Called temp or resource disk.
       end
 
-      def get_locations
-        @vmm.locations.collect do |location|
-          location = location.delete(' ')
-          location.match(VALID_LOCATION).to_s
-        end
-      end
-
       def parse_stack(deployment)
         name = deployment.name
         uid = resource_uid(@subscription_id,
@@ -317,13 +344,18 @@ module ManageIQ::Providers
 
       def stack_template(deployment)
         uri = deployment.properties.try(:template_link).try(:uri)
-        return unless uri
 
-        content = download_template(uri)
+        content = uri.nil? ? template_from_vmdb(deployment) : download_template(uri)
         return unless content
 
         get_stack_template(deployment, content)
         @data_index.fetch_path(:orchestration_templates, deployment.id)
+      end
+
+      def template_from_vmdb(deployment)
+        find_by = {:name => deployment.name, :ems_ref => deployment.id, :ext_management_system => @ems}
+        stack = ManageIQ::Providers::Azure::CloudManager::OrchestrationStack.find_by(find_by)
+        stack.try(:orchestration_template).try(:content)
       end
 
       def download_template(uri)
@@ -379,7 +411,7 @@ module ManageIQ::Providers
       def parse_stack_template(deployment, content)
         # Only need a temporary unique identifier for the template. Using the stack id is the cheapest way.
         uid = deployment.id
-        ver = deployment.properties.template_link.content_version
+        ver = deployment.properties.try(:template_link).try(:content_version)
 
         new_result = {
           :type        => "OrchestrationTemplateAzure",
@@ -424,6 +456,26 @@ module ManageIQ::Providers
           :last_updated           => resource.properties.timestamp
         }
         uid = resource_uid(@subscription_id, group.downcase, new_result[:resource_category].downcase, new_result[:name])
+        return uid, new_result
+      end
+
+      def parse_image(image)
+        uid = image.uri
+        new_result = {
+          :type               => ManageIQ::Providers::Azure::CloudManager::Template.name,
+          :uid_ems            => uid,
+          :ems_ref            => uid,
+          :name               => uid.split(%r{Microsoft.Compute\/}i)[1].split('.').first,
+          :location           => @ems.provider_region,
+          :vendor             => "microsoft",
+          :raw_power_state    => "never",
+          :template           => true,
+          :publicly_available => false,
+          :hardware           => {
+            :bitness  => 64,
+            :guest_os => image.operating_system
+          }
+        }
         return uid, new_result
       end
 

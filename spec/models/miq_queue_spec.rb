@@ -125,7 +125,7 @@ describe MiqQueue do
        :queue_name   => 'ems_metrics_processor',
        :class_name   => 'Metric::Rollup',
        :instance_id  => nil,
-       :args         => '',
+       :args         => [],
        :zone         => 'default',
        :role         => 'ems_metrics_processor',
        :server_guid  => nil,
@@ -334,6 +334,41 @@ describe MiqQueue do
 
       expect(MiqQueue.get).to eq(msg)
       expect(MiqQueue.get).to eq(nil)
+    end
+
+    it "should accept non-Array args (for now)" do
+      begin
+        class MiqQueueSpecNonArrayArgs
+          def self.some_method(single_arg)
+            single_arg
+          end
+        end
+
+        msg = MiqQueue.put(
+          :class_name  => "MiqQueueSpecNonArrayArgs",
+          :method_name => "some_method",
+          :args        => "not_an_array",
+        )
+
+        msg_from_db = MiqQueue.find(msg.id)
+        expect(msg_from_db.args).to eq(["not_an_array"])
+
+        _, _, result = msg_from_db.deliver
+        expect(result).to eq "not_an_array"
+      ensure
+        Object.send(:remove_const, :MiqQueueSpecNonArrayArgs)
+      end
+    end
+
+    it "defaults args / miq_callback to [] / {}" do
+      msg = MiqQueue.put(
+        :class_name  => "Class1",
+        :method_name => "Method1",
+      )
+
+      msg_from_db = MiqQueue.find(msg.id)
+      expect(msg_from_db.args).to eq([])
+      expect(msg_from_db.miq_callback).to eq({})
     end
 
     it "should put a unique message on the queue if method_name is different" do

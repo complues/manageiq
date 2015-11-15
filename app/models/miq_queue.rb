@@ -60,8 +60,8 @@ class MiqQueue < ActiveRecord::Base
 
   TIMEOUT = 10.minutes
 
-  serialize :args
-  serialize :miq_callback
+  serialize :args, Array
+  serialize :miq_callback, Hash
 
   STATE_READY   = 'ready'.freeze
   STATE_DEQUEUE = 'dequeue'.freeze
@@ -102,8 +102,6 @@ class MiqQueue < ActiveRecord::Base
 
   def self.put(options)
     options = options.reverse_merge(
-      :args         => [],
-      :miq_callback => {},
       :priority     => NORMAL_PRIORITY,
       :queue_name   => "generic",
       :role         => nil,
@@ -118,6 +116,9 @@ class MiqQueue < ActiveRecord::Base
     )
     options[:task_id]      = $_miq_worker_current_msg.try(:task_id) unless options.key?(:task_id)
     options[:role]         = options[:role].to_s unless options[:role].nil?
+
+    # Let's deprecate supplying non-array args soon
+    options[:args] = [options[:args]] if options[:args] && !options[:args].kind_of?(Array)
 
     msg = MiqQueue.create!(options)
     msg.warn_if_large_payload
@@ -417,7 +418,7 @@ class MiqQueue < ActiveRecord::Base
         end
       rescue => err
         _log.error("#{MiqQueue.format_short_log_msg(self)}: #{err}")
-        _log.debug("backtrace: #{err.backtrace.join("\n")}")
+        _log.error("backtrace: #{err.backtrace.join("\n")}")
       end
     else
       _log.warn "#{MiqQueue.format_short_log_msg(self)}, Callback is not well-defined, skipping"
@@ -444,12 +445,6 @@ class MiqQueue < ActiveRecord::Base
 
   def unfinished?
     !finished?
-  end
-
-  def self.dev_null(id, data)
-    msg = "Id: #{id} delivered, data: \"#{data}\""
-    _log.info msg
-    puts      msg
   end
 
   def self.atStartup

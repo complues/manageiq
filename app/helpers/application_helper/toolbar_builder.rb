@@ -25,10 +25,22 @@ class ApplicationHelper::ToolbarBuilder
     @view_binding.eval(code)
   end
 
+  def safer_eval(code)
+    code.to_s =~ /\#{/ ? eval("\"#{code}\"") : code
+  end
+
   ###
+  def load_yaml(tb_name)
+    @@toolbar_cache ||= {}
+    @@toolbar_cache[tb_name] ||= (
+      h = YAML.load(File.open("#{TOOLBARS_FOLDER}/#{tb_name}.yaml")).freeze
+      h.values.map(&:freeze)
+      h
+    )
+  end
 
   def build_toolbar(tb_name)
-    tb_hash = tb_name == "custom_buttons_tb" ? build_custom_buttons_toolbar(@record) : YAML.load(File.open("#{TOOLBARS_FOLDER}/#{tb_name}.yaml"))
+    tb_hash = tb_name == "custom_buttons_tb" ? build_custom_buttons_toolbar(@record) : load_yaml(tb_name)
 
     toolbar = []
     groups_added = []
@@ -97,10 +109,11 @@ class ApplicationHelper::ToolbarBuilder
 
           toolbar << props
           current_item = props
+          current_item[:items] ||= []
           any_visible = false
-          bgi[:items].each_with_index do |bsi, bsi_idx|             # Go thru all of the buttonSelect items
-            if bsi.key?(:separator)                             # If separator found, add it
-              props = {"id" => "sep_#{bg_idx}_#{bsi_idx}", "type" => "separator"}
+          bgi[:items].each_with_index do |bsi, bsi_idx|
+            if bsi.key?(:separator)
+              props = {"id" => "sep_#{bg_idx}_#{bsi_idx}", "type" => "separator", :hidden => !any_visible}
             else
               next if bsi[:image] == 'pdf' && !PdfGenerator.available?
               next if build_toolbar_hide_button(bsi[:pressed] || bsi[:button])  # Use pressed, else button name
@@ -117,19 +130,22 @@ class ApplicationHelper::ToolbarBuilder
                   props["text"] = x_tree_history[bsi[:button].split("_").last.to_i][:text]
                 end
               else
-                props["text"] = eval("\"#{bsi[:text]}\"") unless bsi[:text].blank?
+                props["text"] = safer_eval(bsi[:text]) unless bsi[:text].blank?
               end
               props["enabled"] = "#{bsi[:enabled]}" unless bsi[:enabled].blank?
               dis_title = build_toolbar_disable_button(bsi[:button])
               props["enabled"] = "false" if dis_title
-              title = eval("\"#{bsi[:title]}\"") unless bsi[:title].blank?
+              title = safer_eval(bsi[:title]) unless bsi[:title].blank?
               props["title"] = dis_title.kind_of?(String) ? dis_title : title
             end
-            current_item[:items] ||= []
             current_item[:items] << props
             build_toolbar_save_button(bsi, props, bgi[:buttonSelect]) if bsi[:button] # Save if a button (not sep)
 
-            any_visible ||= !props[:hidden]
+            any_visible ||= !props[:hidden] && props["type"] != "separator"
+          end
+          current_item[:items].reverse_each do |item|
+            break if ! item[:hidden] && item["type"] != 'separator'
+            item[:hidden] = true if item["type"] == 'separator'
           end
           current_item[:hidden] = !any_visible
 
@@ -160,7 +176,7 @@ class ApplicationHelper::ToolbarBuilder
           props["text"]    = bgi[:text] unless bgi[:text].blank?
           # set pdf button to be hidden if graphical summary screen is set by default
           bgi[:hidden] = %w(download_view vm_download_pdf).include?(bgi[:button]) && button_hide
-          title = eval("\"#{bgi[:title]}\"") unless bgi[:title].blank? # Evaluate substitutions in text
+          title = safer_eval(bgi[:title]) unless bgi[:title].blank?
           props["title"] = dis_title.kind_of?(String) ? dis_title : title
 
           if bgi[:button] == "chargeback_report_only" && x_active_tree == :cb_reports_tree &&
@@ -189,8 +205,8 @@ class ApplicationHelper::ToolbarBuilder
             "imgdis" => img,
             :icon    => bgi[:icon]
           }
-          props["title"]    = eval("\"#{bgi[:title]}\"") unless bgi[:title].blank?
-          props["enabled"]  = "#{bgi[:enabled]}" unless bgi[:enabled].blank?
+          props["title"]    = safer_eval(bgi[:title]) unless bgi[:title].blank?
+          props["enabled"]  = bgi[:enabled].to_s unless bgi[:enabled].blank?
           props["enabled"]  = "false" if build_toolbar_disable_button(bgi[:buttonTwoState])
           props["selected"] = "true"  if build_toolbar_select_button(bgi[:buttonTwoState])
           if !sep_added && sep_needed
@@ -496,9 +512,17 @@ class ApplicationHelper::ToolbarBuilder
     return true if id == 'miq_request_edit' &&
                    %w(ServiceReconfigureRequest ServiceTemplateProvisionRequest).include?(@miq_request.try(:type))
 
+    # hide power management buttons for Openstack::InfraManager
+    return true if %w(host_standby host_shutdown host_reboot host_start host_stop host_reset).include?(id) &&
+                   @record.kind_of?(ManageIQ::Providers::Openstack::InfraManager)
+
     # only hide gtl button if they are not in @gtl_buttons
     return @gtl_buttons.include?(id) ? false : true if @gtl_buttons &&
                                                        ["view_grid", "view_tile", "view_list"].include?(id)
+
+    # hide compliance check and comparison buttons rendered for orchestration stack instances
+    return true if @record.kind_of?(OrchestrationStack) && @display == "instances" &&
+                   %w(instance_check_compliance instance_compare).include?(id)
 
     # don't hide view buttons in toolbar
     return false if %( view_grid view_tile view_list refresh_log fetch_log common_drift
@@ -800,6 +824,7 @@ class ApplicationHelper::ToolbarBuilder
       when "vm_refresh"
         return true if @record && !@record.ext_management_system && !(@record.host && @record.host.vmm_product.downcase == "workstation")
       when "vm_scan", "instance_scan"
+        return true unless @record.is_available?(:smartstate_analysis) || @record.is_available_now_error_message(:smartstate_analysis)
         return true unless @record.has_proxy?
       when "perf_refresh", "perf_reload", "vm_perf_refresh", "vm_perf_reload"
         return true unless @perf_options[:typ] == "realtime"
@@ -996,6 +1021,11 @@ class ApplicationHelper::ToolbarBuilder
       when "container_group_timeline"
         return "No Timeline data has been collected for this Pod" unless @record.has_events? || @record.has_events?(:policy_events)
       end
+    when "ContainerReplicator"
+      case id
+      when "container_replicator_timeline"
+        return "No Timeline data has been collected for this Replicator" unless @record.has_events? || @record.has_events?(:policy_events)
+      end
     when "ContainerProject"
       case id
       when "container_project_timeline"
@@ -1106,6 +1136,8 @@ class ApplicationHelper::ToolbarBuilder
         return "No Capacity & Utilization data has been collected for this #{ui_lookup(:table => "storages")}" unless @record.has_perf_data?
       when "storage_delete"
         return "Only #{ui_lookup(:table => "storages")} without VMs and Hosts can be removed" if @record.vms_and_templates.length > 0 || @record.hosts.length > 0
+      when "storage_scan"
+        return @record.is_available_now_error_message(:smartstate_analysis) unless @record.is_available?(:smartstate_analysis)
       end
     when "Tenant"
       return "Default Tenant can not be deleted" if @record.parent.nil? && id == "rbac_tenant_delete"
@@ -1126,7 +1158,7 @@ class ApplicationHelper::ToolbarBuilder
       end
     when "Vm"
       case id
-      when "instance_perf", "vm_perf"
+      when "instance_perf", "vm_perf", "container_perf"
         return "No Capacity & Utilization data has been collected for this VM" unless @record.has_perf_data?
       when "instance_check_compliance", "vm_check_compliance"
         model = model_for_vm(@record).to_s
@@ -1311,7 +1343,7 @@ class ApplicationHelper::ToolbarBuilder
     )
 
     if item[:url]
-      url = eval("\"#{item[:url]}\"")
+      url = safer_eval(item[:url])
       if %w(view_grid view_tile view_list).include?(props[:name])
         # blows up in sub screens for CI's, need to get rid of first directory and anything after last slash in @gtl_url, that's being manipulated in JS function
         url.gsub!(/^\/[a-z|A-Z|0-9|_|-]+/, "")
@@ -1346,18 +1378,13 @@ class ApplicationHelper::ToolbarBuilder
       props[:prompt] = true
     end
 
-    if item[:url_parms]
-      parms = eval("\"#{item[:url_parms]}\"")
-      props[:url_parms] = update_url_parms(parms)
-    end
-
-    # doing eval for ui_lookup in confirm message
-    props[:confirm] = eval("\"#{item[:confirm]}\"") if item[:confirm]
+    props[:url_parms] = update_url_parms(safer_eval(item[:url_parms])) unless item[:url_parms].blank?
+    props[:confirm] = safer_eval(item[:confirm]) unless item[:confirm].blank?
     props
   end
 
   def update_url_parms(url_parm)
-    return url_parm if /=/.match(url_parm).nil?
+    return url_parm unless url_parm =~ /=/
 
     keep_parms = %w(bc escape menu_click sb_controller)
     query_string = Rack::Utils.parse_query URI("?#{request.query_string}").query

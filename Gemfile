@@ -19,7 +19,7 @@ gem "jquery-hotkeys-rails"
 gem "jquery-rails",                   "~>4.0.4"
 gem "jquery-rjs",                     "=0.1.1",                       :git => "https://github.com/amatsuda/jquery-rjs.git"
 gem "lodash-rails",                   "~>3.10.0"
-gem "patternfly-sass",                "~>2.5.0"
+gem "patternfly-sass",                "~>2.6.0"
 gem "css_splitter"
 gem "sass-rails"
 
@@ -48,7 +48,7 @@ gem "acts_as_tree",                   "~>2.1.0"  # acts_as_tree needs to be requ
 # See miq_expression_spec Date/Time Support examples.
 # https://github.com/jeremyevans/ruby-american_date
 gem "american_date"
-gem "azure-armrest",                  "=0.0.6"
+gem "azure-armrest",                  "=0.0.8"
 gem "default_value_for",              "~>3.0.1"
 gem "hamlit-rails",                   "~>0.1.0"
 gem "high_voltage",                   "~>2.4.0"
@@ -75,6 +75,7 @@ gem "aws-sdk",                        "~>1.56.0",  :require => false
 gem "dalli",                          "~>2.7.4",   :require => false
 gem "elif",                           "=0.1.0",    :require => false
 gem "google-api-client",              ">=0.8.0",   :require => false
+gem "fog-google",                     ">=0.1.1",   :require => false
 gem "hamlit",                         "~>1.7.2",   :require => false
 gem "inifile",                        "~>3.0",     :require => false
 gem "logging",                        "~>1.6.1",   :require => false  # Ziya depends on this
@@ -124,6 +125,7 @@ source "https://rails-assets.org" do
   gem "rails-assets-angular",                         "~>1.4.3"
   gem "rails-assets-angular-animate",                 "~>1.4.3"
   gem "rails-assets-angular-mocks",                   "~>1.4.3"
+  gem 'rails-assets-angular-sanitize',                "~>1.4.3"
   gem "rails-assets-bootstrap-datepicker",            "~>1.4.0"
   gem "rails-assets-markusslima--bootstrap-filestyle","~>1.2.1"
   gem "rails-assets-bootstrap-hover-dropdown",        "~>2.0.11"
@@ -132,7 +134,7 @@ source "https://rails-assets.org" do
   gem "rails-assets-moment",                          "~>2.10.3"
   gem "rails-assets-moment-strftime",                 "~>0.1.5"
   gem "rails-assets-moment-timezone",                 "~>0.4.0"
-  gem "rails-assets-angular-patternfly",              "~>2.5.0"
+  gem "rails-assets-angular-patternfly",              "~>2.6.0"
   gem "rails-assets-sprintf",                         "~>1.0.3"
   gem "rails-assets-numeral",                         "~>1.5.3"
   gem "rails-assets-slickgrid",                       "~>2.1.0"

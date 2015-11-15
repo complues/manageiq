@@ -75,7 +75,9 @@ class EmsCloudController < ApplicationController
     set_ems_record_vars(verify_ems, :validate)
     @in_a_form = true
 
-    result, details = verify_ems.authentication_check(params[:cred_type], :save => false)
+    save = params[:id] == "new" ? false : true
+    result, details = verify_ems.authentication_check(params[:cred_type], :save => save)
+
     if result
       add_flash(_("Credential validation was successful"))
     else
@@ -160,7 +162,7 @@ class EmsCloudController < ApplicationController
                      :provider_id                     => @ems.provider_id ? @ems.provider_id : "",
                      :hostname                        => @ems.hostname,
                      :api_port                        => @ems.port,
-                     :api_version                     => @ems.api_version,
+                     :api_version                     => @ems.api_version ? @ems.api_version : "v2",
                      :provider_region                 => @ems.provider_region,
                      :openstack_infra_providers_exist => retrieve_openstack_infra_providers.length > 0 ? true : false,
                      :default_userid                  => @ems.authentication_userid ? @ems.authentication_userid : "",
@@ -212,6 +214,10 @@ class EmsCloudController < ApplicationController
     ems.provider_id     = params[:provider_id]
     ems.zone            = Zone.find_by_name(params[:zone])
 
+    if ems.kind_of?(ManageIQ::Providers::Google::CloudManager)
+      ems.project = params[:project]
+    end
+
     if ems.kind_of?(ManageIQ::Providers::Microsoft::InfraManager)
       ems.security_protocol = params[:security_protocol]
       ems.realm = params[:realm]
@@ -236,6 +242,9 @@ class EmsCloudController < ApplicationController
     if ems.supports_authentication?(:amqp) && params[:amqp_userid]
       amqp_password = params[:amqp_password] ? params[:amqp_password] : ems.authentication_password(:amqp)
       creds[:amqp] = {:userid => params[:amqp_userid], :password => amqp_password}
+    end
+    if ems.supports_authentication?(:service_account) && params[:service_account]
+      creds[:service_account] = {:service_account => params[:service_account], :userid => "_"}
     end
     if ems.supports_authentication?(:oauth) && !session[:oauth_response].blank?
       auth = session[:oauth_response]

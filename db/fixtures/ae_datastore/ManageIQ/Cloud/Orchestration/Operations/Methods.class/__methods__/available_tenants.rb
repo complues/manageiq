@@ -1,7 +1,7 @@
 #
 # Description: provide the dynamic list content from available tenants
 #
-tenant_list = {nil => "default"}
+tenant_list = {nil => "<default>"}
 service_template = $evm.root.attributes["service_template"]
 if service_template.respond_to?(:orchestration_manager) && service_template.orchestration_manager
   service_template.orchestration_manager.cloud_tenants.each { |t| tenant_list[t.name] = t.name }
@@ -10,7 +10,7 @@ end
 dialog_field = $evm.object
 
 # sort_by: value / description / none
-dialog_field["sort_by"] = "value"
+dialog_field["sort_by"] = "description"
 
 # sort_order: ascending / descending
 # dialog_field["sort_order"] = "ascending"

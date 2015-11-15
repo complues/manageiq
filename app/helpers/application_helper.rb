@@ -24,6 +24,44 @@ module ApplicationHelper
     end
   end
 
+  def single_relationship_link(record, table_name, property_name = nil)
+    out = ''
+    property_name ||= table_name
+    ent = record.send(property_name)
+    name = ui_lookup(:table => table_name.to_s)
+    if role_allows(:feature => "#{table_name}_show") && !ent.nil?
+      out = content_tag(:li) do
+        link_to("#{name}: #{ent.name}",
+                {:controller => table_name, :action => 'show', :id => ent.id.to_s},
+                :title       => _("Show this %{entity_name}'s parent %{linked_entity_name}") %
+                                {:entity_name        => record.class.name.demodulize.titleize,
+                                 :linked_entity_name => name})
+      end
+    end
+    out
+  end
+
+  def multiple_relationship_link(record, table_name)
+    out = ''
+    if role_allows(:feature => "#{table_name}_show_list") &&
+       (table_name != 'container_route' || record.respond_to?(:container_routes))
+      plural = ui_lookup(:tables => table_name.to_s)
+      count = record.number_of(table_name.to_s.pluralize)
+      if count == 0
+        out = content_tag(:li, :class => "disabled") do
+          link_to("#{plural} (0)", "#")
+        end
+      else
+        out = content_tag(:li) do
+          link_to("#{plural} (#{count})",
+                  {:action => 'show', :id => @record, :display => table_name.to_s.pluralize},
+                  :title => _("Show %{plural_linked_name}") % {:plural_linked_name => plural})
+        end
+      end
+    end
+    out
+  end
+
   # Create a hidden div area based on a condition (using for hiding nav panes)
   def hidden_div_if(condition, options = {}, &block)
     hidden_tag_if(:div, condition, options, &block)
@@ -574,6 +612,32 @@ module ApplicationHelper
     @show_taskbar
   end
 
+  def calculate_content_height(presenter = false)
+    # use explorer presenter vars when replacing right cell
+    if presenter
+      tb      = @options[:reload_toolbars]
+      toolbar = tb[:center] || tb[:view] || tb[:history]
+      pages   = @options[:update_partials][:paging_div] || @options[:update_partials][:form_buttons_div]
+    else
+      toolbar = toolbars_visible?
+      pages   = @pages || @in_a_form
+    end
+
+    if toolbar && pages
+      "100% - 88px"
+    elsif toolbar || pages
+      "100% - 44px"
+    else
+      "100%"
+    end
+  end
+
+  # checking if any of the toolbar is visible
+  def toolbars_visible?
+    (@toolbars['history_tb'] || @toolbars['center_tb'] || @toolbars['view_tb']) &&
+    (@toolbars['history_tb'] != 'blank_view_tb' && @toolbars['history_tb'] != 'blank_view_tb' && @toolbars['view_tb'] != 'blank_view_tb')
+  end
+
   def inner_layout_present?
     if @inner_layout_present.nil?
       @inner_layout_present = false
@@ -988,12 +1052,16 @@ module ApplicationHelper
       %w(show show_list).include?(params[:action])
   end
 
-  def update_paging_url_parms(action_url, parameter_to_update = {})
+  def update_paging_url_parms(action_url, parameter_to_update = {}, post = false)
     url = update_query_string_params(parameter_to_update)
     action, an_id = action_url.split("/", 2)
-    url[:action] = action
-    url[:id] = an_id unless an_id.nil?
-    url_for(url)
+    if !post && controller.send(:restful?) && action == 'show'
+      polymorphic_path(@record, url)
+    else
+      url[:action] = action
+      url[:id] = an_id unless an_id.nil?
+      url_for(url)
+    end
   end
 
   def update_query_string_params(update_this_param)
@@ -1040,10 +1108,7 @@ module ApplicationHelper
                      orchestration_stack repository resource_pool retired security_group service
                      snia_local_file_system storage storage_manager templates vm)
     (@lastaction == "show_list" && !session[:menu_click] && show_search.include?(@layout) && !@in_a_form) ||
-      (@explorer &&
-       x_tree &&
-       [:containers, :filter, :images, :instances, :providers, :vandt].include?(x_tree[:type]) &&
-       !@record)
+      (@explorer && x_tree && tree_with_advanced_search? && !@record)
   end
 
   def need_prov_dialogs?(type)
@@ -1219,12 +1284,14 @@ module ApplicationHelper
     @my_server ||= MiqServer.my_server(true)
   end
 
-  def vm_explorer_tree?
-    [:filter, :images, :instances, :templates_images_filter, :vandt, :vms_instances_filter].include?(x_tree[:type])
+  def tree_with_advanced_search?
+    %i(containers images instances providers vandt
+     images_filter instances_filter templates_filter templates_images_filter containers_filter
+     vms_filter vms_instances_filter).include?(x_tree[:type])
   end
 
   def show_advanced_search?
-    x_tree && ((vm_explorer_tree? && !@record) || @show_adv_search)
+    x_tree && ((tree_with_advanced_search? && !@record) || @show_adv_search)
   end
 
   def listicon_image_tag(db, row)

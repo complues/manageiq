@@ -485,8 +485,6 @@ module EmsCommon
       tag(Storage) if params[:pressed] == "storage_tag"
       deletestorages if params[:pressed] == "storage_delete"
 
-      terminatevms if params[:pressed] == "instance_terminate"
-
       pfx = pfx_for_vm_button_pressed(params[:pressed])
       # Handle Host power buttons
       if ["host_shutdown", "host_reboot", "host_standby", "host_enter_maint_mode", "host_exit_maint_mode",
@@ -756,6 +754,7 @@ module EmsCommon
     end
     @ems_types = Array(model.supported_types_and_descriptions_hash.invert).sort_by(&:first)
     @amazon_regions = get_amazon_regions
+    @azure_regions = get_azure_regions
     @google_regions = list_google_regions
     @openstack_infra_providers = retrieve_openstack_infra_providers
     @openstack_api_versions = retrieve_openstack_api_versions
@@ -765,6 +764,14 @@ module EmsCommon
   def get_amazon_regions
     regions = {}
     ManageIQ::Providers::Amazon::Regions.all.each do |region|
+      regions[region[:name]] = region[:description]
+    end
+    regions
+  end
+
+  def get_azure_regions
+    regions = {}
+    ManageIQ::Providers::Azure::Regions.all.each do |region|
       regions[region[:name]] = region[:description]
     end
     regions
@@ -885,6 +892,9 @@ module EmsCommon
     end
     if ems.supports_authentication?(:bearer) && !@edit[:new][:bearer_token].blank?
       creds[:bearer] = {:auth_key => @edit[:new][:bearer_token], :userid => "_"} # Must have userid
+    end
+    if ems.supports_authentication?(:service_account) && !@edit[:new][:service_account].blank?
+      creds[:service_account] = {:service_account => @edit[:new][:service_account], :userid => "_"}
     end
     ems.update_authentication(creds, :save => (mode != :validate))
   end

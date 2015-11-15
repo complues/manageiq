@@ -37,7 +37,7 @@ describe ApplicationController do
     res.should == "Infrastructure Providers"
 
     res = controller.send(:set_discover_title, "ems", "ems_cloud")
-    res.should == "Amazon Cloud Providers"
+    res.should == "Cloud Providers"
   end
 
   it "Certain actions should not be allowed for a MiqTemplate record" do
@@ -219,6 +219,17 @@ describe ApplicationController do
       to[:third].should == from_third
       controller.send(:flash_errors?).should be_true
     end
+
+    it "displays options to select Azure or Amazon cloud" do
+      session[:type] = "ems"
+      controller.instance_variable_set( :@_params,
+                                        :controller             => "ems_cloud"
+                                      )
+      controller.stub(:drop_breadcrumb)
+      controller.send(:discover)
+      expect(response.status).to eq(200)
+      expect(controller.instance_variable_get(:@discover_type)).to eq(ExtManagementSystem.ems_cloud_discovery_types)
+    end
   end
 
   context "#process_elements" do
@@ -265,7 +276,6 @@ describe HostController do
   context "#show_association" do
     before(:each) do
       set_user_privileges
-      FactoryGirl.create(:vmdb_database)
       EvmSpecHelper.create_guid_miq_server_zone
       @host = FactoryGirl.create(:host)
       @guest_application = FactoryGirl.create(:guest_application, :name => "foo", :host_id => @host.id)
@@ -308,6 +318,27 @@ describe HostController do
       controller.send(:process_objects, vms, 'refresh_ems')
       flash_messages = assigns(:flash_array)
       expect(flash_messages.first[:message]).to include "Refresh Ems initiated for #{vms.length} VMs"
+    end
+  end
+
+  context "#vm_button_operation" do
+    it "when the vm_or_template supports scan,  returns true" do
+      vm1 =  FactoryGirl.create(:vm_microsoft)
+      vm2 =  FactoryGirl.create(:vm_vmware)
+      controller.instance_variable_set(:@_params, :miq_grid_checks => "#{vm1.id}, #{vm2.id}")
+      controller.send(:vm_button_operation, 'scan', "Smartstate Analysis")
+      flash_messages = assigns(:flash_array)
+      expect(flash_messages.first[:message]).to include "Smartstate Analysis does not apply to at least one of the selected Virtual Machines"
+    end
+
+    it "when the vm_or_template supports scan,  returns true" do
+      vm = FactoryGirl.create(:vm_vmware,
+                              :ext_management_system => FactoryGirl.create(:ems_openstack_infra),
+                              :storage               => FactoryGirl.create(:storage)
+                             )
+      controller.instance_variable_set(:@_params, :miq_grid_checks => "#{vm.id}")
+      controller.should_receive(:process_objects)
+      controller.send(:vm_button_operation, 'scan', "Smartstate Analysis")
     end
   end
 end
